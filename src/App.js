@@ -1,28 +1,47 @@
-import React, { Component } from 'react';
-import logo from './logo.svg';
+import React from 'react';
+import Menu from './components/Menu';
+import { Route } from 'react-router-dom';
+// import HomePage from './pages/HomePage';
 import './App.css';
+// import AboutPage from './pages/AboutPage';
+// import ArticlesPage from './pages/ArticlesPage';
+import Loadable from 'react-loadable';
+import RouterListener from './components/RouterListener';
 
-class App extends Component {
-  render() {
-    return (
-      <div className="App">
-        <header className="App-header">
-          <img src={logo} className="App-logo" alt="logo" />
-          <p>
-            Edit <code>src/App.js</code> and save to reload.
-          </p>
-          <a
-            className="App-link"
-            href="https://reactjs.org"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Learn React
-          </a>
-        </header>
-      </div>
-    );
-  }
-}
+const Loading = () => {
+  return <div>로딩중...</div>;
+};
+
+const HomePage = Loadable({
+  loader: () => import('./pages/HomePage'),
+  loading: Loading,
+  delay: 300
+});
+
+const AboutPage = Loadable({
+  loader: () => import('./pages/AboutPage'),
+  loading: Loading,
+  delay: 300
+});
+
+const ArticlesPage = Loadable({
+  loader: () => import('./pages/ArticlesPage'),
+  loading: Loading,
+  delay: 300
+});
+
+const App = () => {
+  return (
+    <div className="App">
+      <Menu />
+      <main>
+        <Route path="/" exact component={HomePage} />
+        <Route path="/about" component={AboutPage} />
+        <Route path="/articles" component={ArticlesPage} />
+      </main>
+      <RouterListener />
+    </div>
+  );
+};
 
 export default App;

@@ -1,27 +1,144 @@
-import App from './App';
+import fs from 'fs';
 import path from 'path';
 import React from 'react';
 import ReactDOMServer from 'react-dom/server';
 import express from 'express';
+import { StaticRouter, matchPath } from 'react-router';
+import Loadable from 'react-loadable';
+import { getBundles } from 'react-loadable/webpack';
+import { createStore, applyMiddleware } from 'redux';
+import { Provider } from 'react-redux';
+import thunk from 'redux-thunk';
+import stats from '../build/react-loadable.json';
+import App from './App';
+import prefetchConfig from './prefetchConfig.js';
+import rootReducer from './modules';
 
 const app = express();
+// 이미 만들어진 indexHtml 을 기반으로 수정 할 것이기에
+// 미리 불러온다.
+const indexHtml = fs.readFileSync(
+  path.resolve(__dirname, '../build/index.html'),
+  'utf8'
+);
 
-function createPage() {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="shortcut icon" href="/favicon.ico"><meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no"><meta name="theme-color" content="#000000"><link rel="manifest" href="/manifest.json"><title>React App</title><link href="/static/css/main.c3e60167.chunk.css" rel="stylesheet"></head><body><noscript>You need to enable JavaScript to run this app.</noscript><div id="root"></div><script>!function(l){function e(e){for(var r,t,n=e[0],o=e[1],u=e[2],f=0,i=[];f<n.length;f++)t=n[f],p[t]&&i.push(p[t][0]),p[t]=0;for(r in o)Object.prototype.hasOwnProperty.call(o,r)&&(l[r]=o[r]);for(s&&s(e);i.length;)i.shift()();return c.push.apply(c,u||[]),a()}function a(){for(var e,r=0;r<c.length;r++){for(var t=c[r],n=!0,o=1;o<t.length;o++){var u=t[o];0!==p[u]&&(n=!1)}n&&(c.splice(r--,1),e=f(f.s=t[0]))}return e}var t={},p={2:0},c=[];function f(e){if(t[e])return t[e].exports;var r=t[e]={i:e,l:!1,exports:{}};return l[e].call(r.exports,r,r.exports,f),r.l=!0,r.exports}f.m=l,f.c=t,f.d=function(e,r,t){f.o(e,r)||Object.defineProperty(e,r,{enumerable:!0,get:t})},f.r=function(e){"undefined"!=typeof Symbol&&Symbol.toStringTag&&Object.defineProperty(e,Symbol.toStringTag,{value:"Module"}),Object.defineProperty(e,"__esModule",{value:!0})},f.t=function(r,e){if(1&e&&(r=f(r)),8&e)return r;if(4&e&&"object"==typeof r&&r&&r.__esModule)return r;var t=Object.create(null);if(f.r(t),Object.defineProperty(t,"default",{enumerable:!0,value:r}),2&e&&"string"!=typeof r)for(var n in r)f.d(t,n,function(e){return r[e]}.bind(null,n));return t},f.n=function(e){var r=e&&e.__esModule?function(){return e.default}:function(){return e};return f.d(r,"a",r),r},f.o=function(e,r){return Object.prototype.hasOwnProperty.call(e,r)},f.p="/";var r=window.webpackJsonp=window.webpackJsonp||[],n=r.push.bind(r);r.push=e,r=r.slice();for(var o=0;o<r.length;o++)e(r[o]);var s=n;a()}([])</script><script src="/static/js/1.2dd891c4.chunk.js"></script><script src="/static/js/main.c4ebd00c.chunk.js"></script></body></html>`;
+// index.html 에 변화를 일으킨다.
+function createPage(rootHtml, bundles, state) {
+  let html = indexHtml;
+
+  // 스플리팅된 자바스크립트
+  const chunkScripts = bundles
+    .filter(bundle => bundle.file.match(/.js$/))
+    .map(bundle => `<script src="${bundle.publicPath}"></script>`)
+    .join('\n');
+
+  // 스플리팅된 스타일
+  const chunkStyles = bundles
+    .filter(bundle => bundle.file.match(/.css$/))
+    .map(bundle => `<link href="${bundle.publicPath}" rel="stylesheet">`)
+    .join('\n');
+
+  // 렌더링 결과를 root 안에 집어넣기
+  html = html.replace(
+    '<div id="root"></div>',
+    `<div id="root">${rootHtml}</div>`
+  );
+
+  // 메타 태그 설정 (+ 스플리팅된 스타일 로딩)
+  html = html.replace('</head>', `${chunkStyles}</head>`);
+
+  // 커스텀 스크립트 정의
+  const customScripts = `<script>
+    window.ssr = true;
+    window.__PRELOADED_STATE__ = ${JSON.stringify(state).replace(
+      /</g,
+      '\\u003c'
+    )};
+    window.shouldCancel = true;
+  </script>`;
+
+  // 커스텀스크립트 적용 + 스플리팅된 스크립트 로딩
+  const mainScript = html.match(
+    /<script src="\/static\/js\/main..*.chunk.js"><\/script>/
+  )[0];
+  html = html.replace(
+    mainScript,
+    `${customScripts}${chunkScripts}${mainScript}`
+  );
+
+  return html;
 }
 
+// 서버렌더링 함수
+const serverRender = async (req, res) => {
+  // 스토어 생성
+  const store = createStore(rootReducer, applyMiddleware(thunk));
+
+  // 데이터 미리 불러오기
+  const promises = [];
+  prefetchConfig.forEach(route => {
+    const match = matchPath(req.path, route);
+    if (match) {
+      const p = route.prefetch(store, match.params);
+      promises.push(p);
+    }
+  });
+
+  try {
+    await Promise.all(promises);
+  } catch (e) {}
+
+  // Loadable.Capture 는 렌더링 과정에서 어떤 컴포넌트들이 사요되었는지 트래킹함
+  const modules = [];
+  const rootHtml = ReactDOMServer.renderToString(
+    <Loadable.Capture report={moduleName => modules.push(moduleName)}>
+      <Provider store={store}>
+        <StaticRouter location={req.url}>
+          <App />
+        </StaticRouter>
+      </Provider>
+    </Loadable.Capture>
+  );
+
+  const state = store.getState();
+
+  // 전달받은 modules 와 stats 정보에 기반하여 bundles 배열을 만든다.
+  const bundles = getBundles(stats, modules);
+  /* 이런 형태의 데이터임:
+    { id: 26,
+      name: './src/pages/AboutPage.js',
+      file: 'static/css/2.918a5411.chunk.css',
+      publicPath: '/static/css/2.918a5411.chunk.css' },
+    { id: 26,
+      name: './src/pages/AboutPage.js',
+      file: 'static/js/2.a2a093b9.chunk.js',
+      publicPath: '/static/js/2.a2a093b9.chunk.js' }, 
+  */
+
+  // 렌더링된 결과 / bundles 를 가지고 html 을 생성하여 사용자에게 전달
+  res.send(createPage(rootHtml, bundles, state));
+};
+
+// / 경로에 들어왔을때도 똑같은 서버사이드 렌더링 작업
+// index.html 을 사용하는것을 방지하는것임
 app.get('/', (req, res) => {
-  res.send(createPage());
+  return serverRender(req, res);
 });
 
+// build 경로를 정적 디렉토리로 사용
 app.use(express.static(path.resolve(__dirname, '../build')));
 
+// 404가 발생하는 경우 서버사이드 렌더링
 app.use((req, res, next) => {
   if (!req.route) {
-    res.send(createPage());
+    return serverRender(req, res);
   }
   return next();
 });
-app.listen(4000, () => {
-  console.log('Running on http://localhost:4000/');
+
+// 스플리팅된 코드들을 모두 불러오고 난 다음에 서버 가동
+Loadable.preloadAll().then(() => {
+  app.listen(4000, () => {
+    console.log('Running on http://localhost:4000/');
+  });
 });

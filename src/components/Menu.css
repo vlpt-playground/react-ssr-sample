@@ -1,0 +1,18 @@
+.Menu {
+  padding: 1rem;
+  text-align: center;
+}
+
+.Menu a {
+  font-size: 1.875rem;
+  font-family: monospace;
+  color: black;
+}
+
+.Menu a + a {
+  margin-left: 1rem;
+}
+
+.Menu a.active {
+  font-weight: 600;
+}
