@@ -7,57 +7,26 @@ const publicPath = paths.servedPath;
 const publicUrl = publicPath.slice(0, -1);
 const env = getClientEnvironment(publicUrl);
 
-// This is the production configuration.
-// It compiles slowly and is focused on producing a fast and minimal bundle.
-// The development configuration is different and lives in a separate file.
 module.exports = {
   mode: 'production',
-  // Don't attempt to continue if there are any errors.
-  // In production, we only want to load the app code.
   entry: [paths.ssrIndexJs],
   target: 'node',
   output: {
-    // The build folder.
     path: paths.ssrBuild,
-    // Generated JS file names (with nested folders).
-    // There will be one main bundle, and one file per asynchronous chunk.
-    // We don't currently advertise code splitting but Webpack supports it.
     filename: 'server.js',
     chunkFilename: 'chunks/[name].[chunkhash:8].chunk.js',
     libraryTarget: 'commonjs2'
   },
   resolve: {
     modules: ['node_modules', paths.appNodeModules].concat(
-      // It is guaranteed to exist because we tweak it in `env.js`
       process.env.NODE_PATH.split(path.delimiter).filter(Boolean)
     )
   },
   module: {
     strictExportPresence: true,
     rules: [
-      // Disable require.ensure as it's not a standard language feature.
       { parser: { requireEnsure: false } },
-
-      // First, run the linter.
-      // It's important to do this before Babel processes the JS.
-      // {
-      //   test: /\.(js|mjs|jsx)$/,
-      //   enforce: 'pre',
-      //   use: [
-      //     {
-      //       options: {
-      //         formatter: require.resolve('react-dev-utils/eslintFormatter'),
-      //         eslintPath: require.resolve('eslint')
-      //       },
-      //       loader: require.resolve('eslint-loader')
-      //     }
-      //   ],
-      //   include: paths.appSrc
-      // },
       {
-        // "oneOf" will traverse all following loaders until one will
-        // match the requirements. When no loader matches it will fall
-        // back to the "file" loader at the end of the loader list.
         oneOf: [
           {
             test: [/\.bmp$/, /\.gif$/, /\.jpe?g$/, /\.png$/],
@@ -141,8 +110,6 @@ module.exports = {
     ]
   },
   plugins: [new webpack.DefinePlugin(env.stringified)],
-  // Some libraries import Node modules but don't use them in the browser.
-  // Tell Webpack to provide empty mocks for them so importing them works.
   node: {
     dgram: 'empty',
     fs: 'empty',
@@ -151,7 +118,5 @@ module.exports = {
     child_process: 'empty',
     __dirname: true
   },
-  // Turn off performance processing because we utilize
-  // our own hints via the FileSizeReporter
   performance: false
 };
