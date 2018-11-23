@@ -60,7 +60,7 @@ module.exports = {
                 ]
               ],
               cacheDirectory: true,
-              cacheCompression: true,
+              cacheCompression: false,
               compact: false
             }
           },
